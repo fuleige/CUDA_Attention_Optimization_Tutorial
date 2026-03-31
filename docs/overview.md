@@ -16,6 +16,13 @@
 - Forward 和部分 Backward 示例
 - correctness tests 和 benchmark
 
+## 当前实现边界
+
+- attention forward 示例当前支持 `head_dim <= 256`
+- `gqa_fwd` 要求 `num_heads` 能被 `num_kv_heads` 整除
+- `flash_fwd` / `flash_bwd` 是教学版 FlashAttention-style 实现
+- `async_pipeline` 是教学版双缓冲骨架，不是完整 `cp.async` 版本
+
 默认编译器：
 
 - `/usr/local/cuda/bin/nvcc`
@@ -84,6 +91,12 @@ make bench
 - FlashAttention 为什么能减少 IO
 - PagedAttention 为什么更偏推理态 KV cache 管理
 - GQA、sliding window、block sparse 为什么会改变计算图和性能特征
+
+这里要特别注意：
+
+- 仓库中的 `flash_*` 重点在讲解 online softmax 和 tile 化思路
+- 它不是对生产级 FlashAttention kernel 的逐指令复刻
+- `paged_fwd` 重点在 page table 和逻辑/物理映射，也支持 mask 作用在逻辑 token 顺序上
 
 ## 建议的学习路线
 

@@ -1,5 +1,10 @@
 # Example Commands
 
+先记住两个约束：
+
+- attention forward 示例当前要求 `--head-dim <= 256`
+- `gqa_fwd` 要求 `--heads` 能被 `--kv-heads` 整除
+
 ## GEMM
 
 ```bash
@@ -56,6 +61,10 @@
 ./bin/attention_runner --kernel paged_fwd --dtype fp32 --batch 1 --heads 8 --kv-heads 8 --seq-q 1 --seq-kv 256 --head-dim 64 --page-size 16 --check true
 ```
 
+```bash
+./bin/attention_runner --kernel paged_fwd --dtype fp32 --batch 1 --heads 8 --kv-heads 8 --seq-q 128 --seq-kv 128 --head-dim 64 --causal true --window 32 --block-sparse true --block-size 16 --page-size 16 --check true
+```
+
 ## Attention Backward
 
 ```bash
@@ -65,4 +74,3 @@
 ```bash
 ./bin/attention_runner --kernel flash_bwd --dtype fp32 --batch 1 --heads 4 --kv-heads 4 --seq-q 64 --seq-kv 64 --head-dim 32 --causal true --check true
 ```
-

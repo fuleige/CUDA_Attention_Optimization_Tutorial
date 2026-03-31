@@ -28,7 +28,7 @@ AttentionOptions parse_options(const CliArgs& args, AttentionKernelKind kind) {
     options.causal = args.get_bool("causal", false);
     options.window_left = args.get_int("window", kind == AttentionKernelKind::kSlidingForward ? 64 : -1);
     options.block_size = args.get_int("block-size", 16);
-    options.block_sparse = (kind == AttentionKernelKind::kBlockSparseForward);
+    options.block_sparse = args.get_bool("block-sparse", kind == AttentionKernelKind::kBlockSparseForward);
     return options;
 }
 
@@ -41,6 +41,13 @@ int run_forward(const CliArgs& args, AttentionKernelKind kind) {
     const bool check = args.get_bool("check", false);
     const bool csv = args.get_bool("csv", false);
     const int page_size = args.get_int("page-size", 16);
+    validate_attention_inputs(
+        kind,
+        std::is_same_v<T, half> ? DataType::kFloat16 : DataType::kFloat32,
+        shape,
+        options,
+        page_size
+    );
 
     auto h_q = random_vector<T>(shape.batch_size * shape.num_heads * shape.seq_len_q * shape.head_dim, 0.5f, 13);
     auto h_k = random_vector<T>(shape.batch_size * shape.num_kv_heads * shape.seq_len_kv * shape.head_dim, 0.5f, 17);
@@ -113,7 +120,7 @@ int run_forward(const CliArgs& args, AttentionKernelKind kind) {
     if (check) {
         switch (kind) {
             case AttentionKernelKind::kPagedForward:
-                paged_attention_reference(h_q, h_k, h_v, page_table, page_size, shape, &h_ref);
+                paged_attention_reference(h_q, h_k, h_v, page_table, page_size, shape, options, &h_ref);
                 break;
             case AttentionKernelKind::kSlidingForward:
             case AttentionKernelKind::kBlockSparseForward:
@@ -182,6 +189,7 @@ int run_backward(const CliArgs& args, AttentionKernelKind kind) {
     const int iters = args.get_int("iters", 10);
     const bool check = args.get_bool("check", false);
     const bool csv = args.get_bool("csv", false);
+    validate_attention_inputs(kind, DataType::kFloat32, shape, options, 0);
 
     auto h_q = random_vector<float>(shape.batch_size * shape.num_heads * shape.seq_len_q * shape.head_dim, 0.5f, 23);
     auto h_k = random_vector<float>(shape.batch_size * shape.num_kv_heads * shape.seq_len_kv * shape.head_dim, 0.5f, 29);
@@ -288,7 +296,14 @@ void print_help() {
               << "  --kernel basic_fwd|flash_fwd|paged_fwd|gqa_fwd|sliding_fwd|block_sparse_fwd|basic_bwd|flash_bwd\n"
               << "  --dtype fp32|fp16\n"
               << "  --batch 1 --heads 8 --kv-heads 8 --seq-q 128 --seq-kv 128 --head-dim 64\n"
-              << "  --causal true --window 64 --block-size 16 --page-size 16\n"
+              << "  --causal true --window 64 --block-size 16 --block-sparse true --page-size 16\n"
+              << "  Notes:\n"
+              << "    basic_fwd/flash_fwd/gqa_fwd support causal masking only\n"
+              << "    sliding_fwd uses --window\n"
+              << "    block_sparse_fwd uses --block-size\n"
+              << "    paged_fwd supports causal/window/block-sparse options plus --page-size\n"
+              << "    forward kernels currently require --head-dim <= 256\n"
+              << "    flash_* are teaching implementations, not production-faithful FlashAttention kernels\n"
               << "  --warmup 5 --iters 20 --check true --csv true\n";
 }
 

@@ -105,7 +105,55 @@ make bench
 - `.build/bench/attention_fwd_bench.csv`
 - `.build/bench/attention_bwd_bench.csv`
 
-## 5. 第一次建议跑的单个命令
+## 5. 运行前先知道的输入约束
+
+### Attention forward 的 `head_dim`
+
+当前 forward 示例要求：
+
+- `head_dim <= 256`
+
+这是当前教学 kernel 的实现边界，runner 会直接报错，而不是静默给出错误结果。
+
+### GQA / MQA 的 head 关系
+
+当前要求：
+
+- `num_heads % num_kv_heads == 0`
+
+例如：
+
+- `8 heads / 2 kv-heads` 可以
+- `8 heads / 3 kv-heads` 不可以
+
+### 不同 kernel 支持的 mask 选项
+
+- `basic_fwd`
+  - 支持 `--causal`
+- `flash_fwd`
+  - 支持 `--causal`
+- `gqa_fwd`
+  - 支持 `--causal`
+- `sliding_fwd`
+  - 支持 `--causal` 和 `--window`
+- `block_sparse_fwd`
+  - 支持 `--causal` 和块稀疏规则
+- `paged_fwd`
+  - 支持 `--causal`、`--window`、`--block-sparse`、`--page-size`
+
+### 关于 `flash_*`
+
+这里的 `flash_fwd` / `flash_bwd` 是教学版 FlashAttention-style 实现。
+
+重点是帮助你理解：
+
+- tile 化
+- online softmax
+- 减少中间 IO 的思路
+
+它不是直接照搬生产级 FlashAttention 的完整并行分工和极限优化。
+
+## 6. 第一次建议跑的单个命令
 
 先从最简单的 GEMM 开始：
 
@@ -139,7 +187,7 @@ attention 建议顺序：
 ./bin/attention_runner --kernel paged_fwd --dtype fp32 --batch 1 --heads 8 --kv-heads 8 --seq-q 1 --seq-kv 256 --head-dim 64 --page-size 16 --check true
 ```
 
-## 6. 输出怎么看
+## 7. 输出怎么看
 
 ### correctness 输出
 
@@ -159,7 +207,7 @@ attention 建议顺序：
 
 不要只看一个数字。一个 kernel 可能 `TFLOPS` 不高，但访存更稳，或者只适合某些尺寸。
 
-## 7. 初学者常见误区
+## 8. 初学者常见误区
 
 ### 误区 1：能跑就说明写得好
 
@@ -184,7 +232,11 @@ attention 建议顺序：
 
 不是。FlashAttention 的核心是 IO-aware 设计，它在减少中间张量落地和全局内存访问上收益很大。
 
-## 8. 建议学习顺序
+### 误区 5：仓库里的 `flash_fwd` 就等于生产级 FlashAttention
+
+不是。这里是教学实现，重点在“帮助理解思路”，不是“逐项复刻最强工程实现”。
+
+## 9. 建议学习顺序
 
 1. 先理解 naive GEMM
 2. 理解为什么 shared memory 能加速 GEMM
@@ -195,7 +247,7 @@ attention 建议顺序：
 7. 再看 FlashAttention 的 online softmax
 8. 最后看 PagedAttention、GQA、sliding window、block sparse
 
-## 9. 如果你准备自己改代码
+## 10. 如果你准备自己改代码
 
 建议每次只改一件事：
 
@@ -206,4 +258,3 @@ attention 建议顺序：
 5. 再跑一个固定 benchmark case
 
 不要同时改 4 件事，否则你很难知道性能变化和错误来自哪里。
-

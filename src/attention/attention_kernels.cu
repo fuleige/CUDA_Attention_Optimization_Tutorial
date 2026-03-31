@@ -47,6 +47,32 @@ __device__ inline bool allow_dense_mask(
     return !causal || kv_idx <= q_idx + (seq_len_kv - seq_len_q);
 }
 
+__device__ inline bool allow_attention_runtime(
+    int q_idx,
+    int kv_idx,
+    int seq_len_q,
+    int seq_len_kv,
+    bool causal,
+    int window_left,
+    int block_size,
+    bool block_sparse
+) {
+    if (!allow_dense_mask(q_idx, kv_idx, seq_len_q, seq_len_kv, causal)) {
+        return false;
+    }
+    if (window_left >= 0 && kv_idx < q_idx - window_left) {
+        return false;
+    }
+    if (block_sparse) {
+        const int q_block = q_idx / block_size;
+        const int kv_block = kv_idx / block_size;
+        if (abs(q_block - kv_block) > 1) {
+            return false;
+        }
+    }
+    return true;
+}
+
 template <AttentionMode mode>
 __device__ inline bool allow_attention(
     int q_idx,
@@ -177,6 +203,9 @@ __global__ void attention_flash_forward_kernel(
     int window_left,
     int block_size
 ) {
+    // This is a FlashAttention-style teaching kernel: it demonstrates online
+    // softmax and tiled K/V traversal, but it does not implement the full
+    // warp-specialized, IO-optimized work decomposition of production kernels.
     const int row = blockIdx.x;
     const int q_idx = row % seq_len_q;
     const int tmp = row / seq_len_q;
@@ -285,7 +314,11 @@ __global__ void paged_attention_forward_kernel(
     int seq_len_q,
     int seq_len_kv,
     int head_dim,
-    int page_size
+    int page_size,
+    bool causal,
+    int window_left,
+    int block_size,
+    bool block_sparse
 ) {
     const int row = blockIdx.x;
     const int q_idx = row % seq_len_q;
@@ -303,6 +336,10 @@ __global__ void paged_attention_forward_kernel(
     if (threadIdx.x == 0) {
         shared_max = -CUDART_INF_F;
         for (int logical = 0; logical < seq_len_kv; ++logical) {
+            if (!allow_attention_runtime(
+                    q_idx, logical, seq_len_q, seq_len_kv, causal, window_left, block_size, block_sparse)) {
+                continue;
+            }
             const int page_slot = logical / page_size;
             const int offset_in_page = logical % page_size;
             const int physical_page = page_table[page_slot];
@@ -323,6 +360,18 @@ __global__ void paged_attention_forward_kernel(
     float acc0 = 0.0f;
     float acc1 = 0.0f;
     for (int logical = 0; logical < seq_len_kv; ++logical) {
+        if (threadIdx.x == 0) {
+            if (!allow_attention_runtime(
+                    q_idx, logical, seq_len_q, seq_len_kv, causal, window_left, block_size, block_sparse)) {
+                shared_weight = 0.0f;
+            }
+        }
+        __syncthreads();
+        if (!allow_attention_runtime(
+                q_idx, logical, seq_len_q, seq_len_kv, causal, window_left, block_size, block_sparse)) {
+            __syncthreads();
+            continue;
+        }
         const int page_slot = logical / page_size;
         const int offset_in_page = logical % page_size;
         const int physical_page = page_table[page_slot];
@@ -489,6 +538,64 @@ void launch_dense_like_forward(
 
 }  // namespace
 
+void validate_attention_inputs(
+    AttentionKernelKind kind,
+    DataType dtype,
+    const AttentionShape& shape,
+    const AttentionOptions& options,
+    int page_size
+) {
+    const auto require = [](bool condition, const std::string& message) {
+        if (!condition) {
+            throw std::runtime_error(message);
+        }
+    };
+
+    require(shape.batch_size > 0, "batch must be > 0");
+    require(shape.num_heads > 0, "heads must be > 0");
+    require(shape.num_kv_heads > 0, "kv-heads must be > 0");
+    require(shape.num_kv_heads <= shape.num_heads, "kv-heads must be <= heads");
+    require((shape.num_heads % shape.num_kv_heads) == 0, "heads must be divisible by kv-heads for GQA/MQA mapping");
+    require(shape.seq_len_q > 0, "seq-q must be > 0");
+    require(shape.seq_len_kv > 0, "seq-kv must be > 0");
+    require(shape.head_dim > 0, "head-dim must be > 0");
+    require(options.block_size > 0, "block-size must be > 0");
+
+    const bool is_forward = kind == AttentionKernelKind::kBasicForward || kind == AttentionKernelKind::kFlashForward ||
+        kind == AttentionKernelKind::kPagedForward || kind == AttentionKernelKind::kGqaForward ||
+        kind == AttentionKernelKind::kSlidingForward || kind == AttentionKernelKind::kBlockSparseForward;
+    if (is_forward) {
+        require(
+            shape.head_dim <= 256,
+            "Forward attention kernels currently support head-dim <= 256; extend the kernel before using larger values");
+    }
+
+    const bool allows_window = kind == AttentionKernelKind::kSlidingForward || kind == AttentionKernelKind::kPagedForward;
+    const bool allows_block_sparse = kind == AttentionKernelKind::kBlockSparseForward || kind == AttentionKernelKind::kPagedForward;
+    if (!allows_window) {
+        require(options.window_left < 0, "window is only supported by sliding_fwd and paged_fwd");
+    }
+    if (!allows_block_sparse) {
+        require(!options.block_sparse, "block-sparse masking is only supported by block_sparse_fwd and paged_fwd");
+    }
+    if (kind == AttentionKernelKind::kBasicBackward || kind == AttentionKernelKind::kFlashBackward) {
+        require(dtype == DataType::kFloat32, "Backward kernels currently require dtype=fp32");
+        require(options.window_left < 0, "Backward kernels currently do not support windowed masking");
+        require(!options.block_sparse, "Backward kernels currently do not support block-sparse masking");
+        int device = 0;
+        CUDA_CHECK(cudaGetDevice(&device));
+        cudaDeviceProp prop {};
+        CUDA_CHECK(cudaGetDeviceProperties(&prop, device));
+        const std::size_t shared_bytes = sizeof(float) * shape.seq_len_kv * 3;
+        require(
+            shared_bytes <= prop.sharedMemPerBlock,
+            "Backward teaching kernel uses dynamic shared memory proportional to seq-kv and exceeds this GPU's per-block limit");
+    }
+    if (kind == AttentionKernelKind::kPagedForward) {
+        require(page_size > 0, "page-size must be > 0 for paged_fwd");
+    }
+}
+
 std::string attention_kernel_name(AttentionKernelKind kind) {
     switch (kind) {
         case AttentionKernelKind::kBasicForward:
@@ -556,7 +663,8 @@ void launch_attention_forward(
         const int rows = shape.batch_size * shape.num_heads * shape.seq_len_q;
         paged_attention_forward_kernel<<<rows, 128>>>(
             d_q, d_k, d_v, d_page_table, d_out, shape.batch_size, shape.num_heads, shape.num_kv_heads,
-            shape.seq_len_q, shape.seq_len_kv, shape.head_dim, page_size);
+            shape.seq_len_q, shape.seq_len_kv, shape.head_dim, page_size, options.causal, options.window_left,
+            options.block_size, options.block_sparse);
         CUDA_CHECK(cudaGetLastError());
         return;
     }

@@ -9,6 +9,13 @@ namespace {
 
 template <typename T>
 bool run_forward_case(AttentionKernelKind kind, AttentionShape shape, AttentionOptions options, int page_size = 16) {
+    validate_attention_inputs(
+        kind,
+        std::is_same_v<T, half> ? DataType::kFloat16 : DataType::kFloat32,
+        shape,
+        options,
+        page_size
+    );
     auto h_q = random_vector<T>(shape.batch_size * shape.num_heads * shape.seq_len_q * shape.head_dim, 0.5f, 41);
     auto h_k = random_vector<T>(shape.batch_size * shape.num_kv_heads * shape.seq_len_kv * shape.head_dim, 0.5f, 43);
     auto h_v = random_vector<T>(shape.batch_size * shape.num_kv_heads * shape.seq_len_kv * shape.head_dim, 0.5f, 47);
@@ -61,7 +68,7 @@ bool run_forward_case(AttentionKernelKind kind, AttentionShape shape, AttentionO
     if (!page_table.empty()) {
         CUDA_CHECK(cudaMalloc(&d_page_table, sizeof(int) * page_table.size()));
         CUDA_CHECK(cudaMemcpy(d_page_table, page_table.data(), sizeof(int) * page_table.size(), cudaMemcpyHostToDevice));
-        paged_attention_reference(h_q, h_k, h_v, page_table, page_size, shape, &h_ref);
+        paged_attention_reference(h_q, h_k, h_v, page_table, page_size, shape, options, &h_ref);
     } else {
         attention_forward_reference(h_q, h_k, h_v, shape, options, &h_ref);
     }
@@ -93,6 +100,7 @@ bool run_backward_case(AttentionKernelKind kind) {
     AttentionShape shape {1, 4, 4, 32, 32, 32};
     AttentionOptions options {};
     options.causal = true;
+    validate_attention_inputs(kind, DataType::kFloat32, shape, options, 0);
 
     auto h_q = random_vector<float>(shape.batch_size * shape.num_heads * shape.seq_len_q * shape.head_dim, 0.5f, 53);
     auto h_k = random_vector<float>(shape.batch_size * shape.num_kv_heads * shape.seq_len_kv * shape.head_dim, 0.5f, 59);
@@ -159,6 +167,26 @@ bool run_backward_case(AttentionKernelKind kind) {
     return pass;
 }
 
+bool expect_validation_error(
+    AttentionKernelKind kind,
+    DataType dtype,
+    const AttentionShape& shape,
+    const AttentionOptions& options,
+    int page_size,
+    const char* label
+) {
+    try {
+        validate_attention_inputs(kind, dtype, shape, options, page_size);
+        std::cout << "[attention-validate] case=" << label << " pass=false" << std::endl;
+        return false;
+    } catch (const std::exception& ex) {
+        std::cout << "[attention-validate] case=" << label << " pass=true"
+                  << " message=\"" << ex.what() << "\""
+                  << std::endl;
+        return true;
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -180,11 +208,41 @@ int main() {
     ok = run_forward_case<float>(AttentionKernelKind::kSlidingForward, dense_shape, sliding_opts) && ok;
     AttentionOptions block_sparse_opts = dense_opts;
     block_sparse_opts.block_sparse = true;
+    block_sparse_opts.block_size = 8;
+    AttentionOptions paged_opts = dense_opts;
+    paged_opts.window_left = 16;
+    paged_opts.block_sparse = true;
+    paged_opts.block_size = 8;
     ok = run_forward_case<float>(AttentionKernelKind::kBlockSparseForward, dense_shape, block_sparse_opts) && ok;
-    ok = run_forward_case<float>(AttentionKernelKind::kPagedForward, dense_shape, AttentionOptions {}, 8) && ok;
+    ok = run_forward_case<float>(AttentionKernelKind::kPagedForward, dense_shape, paged_opts, 8) && ok;
     ok = run_forward_case<half>(AttentionKernelKind::kBasicForward, dense_shape, dense_opts) && ok;
     ok = run_forward_case<half>(AttentionKernelKind::kFlashForward, dense_shape, dense_opts) && ok;
     ok = run_backward_case(AttentionKernelKind::kBasicBackward) && ok;
     ok = run_backward_case(AttentionKernelKind::kFlashBackward) && ok;
+
+    ok = expect_validation_error(
+             AttentionKernelKind::kBasicForward,
+             DataType::kFloat32,
+             AttentionShape {1, 4, 4, 32, 32, 384},
+             dense_opts,
+             16,
+             "head_dim_gt_256"
+         ) && ok;
+    ok = expect_validation_error(
+             AttentionKernelKind::kGqaForward,
+             DataType::kFloat32,
+             AttentionShape {1, 8, 3, 32, 32, 64},
+             dense_opts,
+             16,
+             "non_divisible_gqa"
+         ) && ok;
+    ok = expect_validation_error(
+             AttentionKernelKind::kBasicForward,
+             DataType::kFloat32,
+             dense_shape,
+             sliding_opts,
+             16,
+             "window_on_basic_fwd"
+         ) && ok;
     return ok ? 0 : 1;
 }

@@ -28,3 +28,10 @@ make bench
 ```
 
 默认编译器是 `/usr/local/cuda/bin/nvcc`，默认目标架构是 `sm_89`。
+
+当前要先知道的几个约束：
+
+- attention forward 示例当前要求 `head_dim <= 256`
+- `GQA/MQA` 风格示例要求 `num_heads % num_kv_heads == 0`
+- `flash_*` 是 FlashAttention-style 教学实现
+- `async_pipeline` 是为后续 `cp.async` 演进保留的教学骨架，不是完整生产实现

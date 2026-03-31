@@ -62,6 +62,12 @@ nvidia-smi
 
 如果你随手改了 shape，先确认是不是违反了这类约束。
 
+attention 里常见约束还有：
+
+- forward 示例当前要求 `head_dim <= 256`
+- `gqa_fwd` 要求 `num_heads % num_kv_heads == 0`
+- `window` 只适用于 `sliding_fwd` 和 `paged_fwd`
+
 ### 数值误差超阈值
 
 先判断是不是这几类情况：
@@ -129,6 +135,11 @@ FlashAttention 的优势往往在：
 - 更明显的 IO 压力
 - 更大的中间张量成本
 
+另外要记住：
+
+- 这个仓库里的 `flash_fwd` 是教学版 FlashAttention-style 实现
+- 它更适合帮助你建立算法直觉，而不是拿来代表生产级实现的上限
+
 ## 6. 为什么 `paged_fwd` 不一定比 `flash_fwd` 快
 
 因为它们解决的问题不同。
@@ -195,4 +206,3 @@ FlashAttention 的优势往往在：
 3. 对比不同 tile 大小
 4. 对比 `fp32` 和 `fp16`
 5. 对比短序列和长序列
-

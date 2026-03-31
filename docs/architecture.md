@@ -139,6 +139,7 @@
 
 - 保留了和真正 `cp.async` 路线一致的结构化调度思路
 - 便于继续向更完整的 Ampere async copy 写法演进
+- 当前代码仍是教学骨架，不是完整 `cp.async` 实现
 
 #### wmma
 
@@ -203,12 +204,23 @@
 
 这是 attention 优化里最重要的一章。
 
+这里要明确：
+
+- 当前仓库的 `flash_fwd` 是 FlashAttention-style 教学实现
+- 它保留了 online softmax 和分 tile 思路
+- 但没有实现生产级 FlashAttention 那种更完整的 warp/block 并行分工
+
 #### paged_fwd
 
 学习重点：
 
 - 为什么大模型推理要把 KV cache 分页
 - 逻辑顺序和物理存储顺序不一致时，如何通过 page table 找回数据
+
+当前实现还额外演示了：
+
+- mask 仍然作用在逻辑 token 顺序上
+- page table 只改变物理存储位置，不改变注意力的逻辑可见性规则
 
 #### gqa_fwd
 
@@ -244,6 +256,11 @@
 - 正确性可验证
 
 而不是极致性能。
+
+特别是：
+
+- `flash_bwd` 当前是 FlashAttention-style 教学 backward
+- 它不是生产级 flash backward kernel
 
 ### [attention_runner.cu](/root/codes/deploy_server/src/attention/attention_runner.cu)
 
@@ -305,4 +322,3 @@
 - reference
 - `compare_vectors`
 - `pass=true/false`
-

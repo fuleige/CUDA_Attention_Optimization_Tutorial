@@ -211,9 +211,9 @@ void paged_attention_reference(
     const std::vector<int>& page_table,
     int page_size,
     const AttentionShape& shape,
+    const AttentionOptions& options,
     std::vector<T>* out
 ) {
-    const int num_pages = static_cast<int>(page_table.size());
     std::vector<T> k(shape.batch_size * shape.num_kv_heads * shape.seq_len_kv * shape.head_dim);
     std::vector<T> v(shape.batch_size * shape.num_kv_heads * shape.seq_len_kv * shape.head_dim);
     for (int logical = 0; logical < shape.seq_len_kv; ++logical) {
@@ -232,7 +232,6 @@ void paged_attention_reference(
             }
         }
     }
-    AttentionOptions options {};
     attention_forward_reference(q, k, v, shape, options, out);
 }
 
@@ -300,6 +299,7 @@ template void paged_attention_reference<float>(
     const std::vector<int>&,
     int,
     const AttentionShape&,
+    const AttentionOptions&,
     std::vector<float>*
 );
 template void paged_attention_reference<half>(
@@ -309,5 +309,6 @@ template void paged_attention_reference<half>(
     const std::vector<int>&,
     int,
     const AttentionShape&,
+    const AttentionOptions&,
     std::vector<half>*
 );

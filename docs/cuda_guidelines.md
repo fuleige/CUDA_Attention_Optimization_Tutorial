@@ -135,6 +135,8 @@ CUDA 程序有一个容易让初学者困惑的点：
 - `flash_bwd` 当前是“可运行的教学版 backward”，不是高度优化的生产实现
 - `async_pipeline` 保留了双缓冲的调度结构，用于承接后续 `cp.async` 深化
 - `wmma` 版本要求矩阵维度是 `16` 的倍数，并使用 `fp16` 输入
+- attention forward 示例当前要求 `head_dim <= 256`
+- `gqa_fwd` 要求 `num_heads % num_kv_heads == 0`
 
 ## 8. 对初学者最重要的建议
 

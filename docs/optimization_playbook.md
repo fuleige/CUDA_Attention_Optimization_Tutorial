@@ -192,6 +192,12 @@ FlashAttention 重点是 IO-aware。
 - 少读中间结果
 - 更适合长序列
 
+结合本仓库要注意：
+
+- 这里的 `flash_fwd` 是教学版 FlashAttention-style kernel
+- 它的价值在于帮助你理解 online softmax 和 tile 化思路
+- 不应把它当作生产级 FlashAttention 的性能上界
+
 ### 策略 4：把注意力模式本身变稀疏或局部化
 
 如果业务允许，不一定非要算 full attention。
@@ -227,6 +233,12 @@ PagedAttention 更关注：
 - decode
 - KV cache 动态增长
 - 分页存储和访问映射
+
+在本仓库里，`paged_fwd` 还演示了一点：
+
+- page table 解决的是“数据放在哪里”
+- causal / window / block-sparse 解决的是“逻辑上能看哪些 token”
+- 这两类问题可以叠加，但不要混为一谈
 
 ### 策略 6：backward 优化通常比 forward 更难
 
@@ -396,4 +408,3 @@ PagedAttention 更关注：
 - `paged_fwd`
 
 重点理解它们解决的是不同问题，而不是单纯谁更快。
-

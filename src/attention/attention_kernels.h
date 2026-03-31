@@ -19,6 +19,14 @@ enum class AttentionKernelKind {
 std::string attention_kernel_name(AttentionKernelKind kind);
 AttentionKernelKind parse_attention_kernel(const std::string& name);
 
+void validate_attention_inputs(
+    AttentionKernelKind kind,
+    DataType dtype,
+    const AttentionShape& shape,
+    const AttentionOptions& options,
+    int page_size
+);
+
 template <typename T>
 void launch_attention_forward(
     AttentionKernelKind kind,
@@ -44,4 +52,3 @@ void launch_attention_backward(
     const AttentionShape& shape,
     const AttentionOptions& options
 );
-

@@ -124,6 +124,12 @@ ncu --set full ./bin/attention_runner --kernel flash_fwd --dtype fp32 --batch 1 
 
 这三类最容易建立“为什么会变快”的直觉。
 
+做 `flash_fwd` 对比时要带着一个正确预期：
+
+- 这里的 `flash_fwd` 是教学实现
+- 你看到的是“算法思路上的收益趋势”
+- 不是生产级 FlashAttention 的最终性能数字
+
 ## 8. 结果应该怎么记
 
 建议至少记录：

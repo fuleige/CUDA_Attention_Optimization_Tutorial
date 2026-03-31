@@ -62,5 +62,6 @@ void paged_attention_reference(
     const std::vector<int>& page_table,
     int page_size,
     const AttentionShape& shape,
+    const AttentionOptions& options,
     std::vector<T>* out
 );
