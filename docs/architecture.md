@@ -9,19 +9,19 @@
 
 如果你是初学者，建议按下面顺序看代码：
 
-1. [util.h](/root/codes/deploy_server/src/common/util.h)
-2. [reference.h](/root/codes/deploy_server/src/common/reference.h)
-3. [reference.cu](/root/codes/deploy_server/src/common/reference.cu)
-4. [gemm_kernels.h](/root/codes/deploy_server/src/gemm/gemm_kernels.h)
-5. [gemm_kernels.cu](/root/codes/deploy_server/src/gemm/gemm_kernels.cu)
-6. [gemm_runner.cu](/root/codes/deploy_server/src/gemm/gemm_runner.cu)
-7. [attention_kernels.h](/root/codes/deploy_server/src/attention/attention_kernels.h)
-8. [attention_kernels.cu](/root/codes/deploy_server/src/attention/attention_kernels.cu)
-9. [attention_runner.cu](/root/codes/deploy_server/src/attention/attention_runner.cu)
+1. [util.h](../src/common/util.h)
+2. [reference.h](../src/common/reference.h)
+3. [reference.cu](../src/common/reference.cu)
+4. [gemm_kernels.h](../src/gemm/gemm_kernels.h)
+5. [gemm_kernels.cu](../src/gemm/gemm_kernels.cu)
+6. [gemm_runner.cu](../src/gemm/gemm_runner.cu)
+7. [attention_kernels.h](../src/attention/attention_kernels.h)
+8. [attention_kernels.cu](../src/attention/attention_kernels.cu)
+9. [attention_runner.cu](../src/attention/attention_runner.cu)
 
 ## 2. 公共层
 
-### [cuda_check.h](/root/codes/deploy_server/src/common/cuda_check.h)
+### [cuda_check.h](../src/common/cuda_check.h)
 
 作用：
 
@@ -33,7 +33,7 @@
 - CUDA 的错误常常是“异步暴露”的
 - 如果不及时检查，错误会在后面某一步才炸开，很难定位
 
-### [timer.h](/root/codes/deploy_server/src/common/timer.h)
+### [timer.h](../src/common/timer.h)
 
 作用：
 
@@ -44,14 +44,14 @@
 - kernel 是异步执行的
 - 不同步就计时，经常会得到错误结论
 
-### [cli.h](/root/codes/deploy_server/src/common/cli.h)
+### [cli.h](../src/common/cli.h)
 
 作用：
 
 - 解析命令行参数
 - 打印 GPU 设备摘要
 
-### [util.h](/root/codes/deploy_server/src/common/util.h)
+### [util.h](../src/common/util.h)
 
 作用：
 
@@ -60,7 +60,7 @@
 - 向量比较
 - CSV 输出
 
-### [reference.h](/root/codes/deploy_server/src/common/reference.h) 和 [reference.cu](/root/codes/deploy_server/src/common/reference.cu)
+### [reference.h](../src/common/reference.h) 和 [reference.cu](../src/common/reference.cu)
 
 作用：
 
@@ -71,7 +71,7 @@
 
 ## 3. GEMM 层
 
-### [gemm_kernels.h](/root/codes/deploy_server/src/gemm/gemm_kernels.h)
+### [gemm_kernels.h](../src/gemm/gemm_kernels.h)
 
 作用：
 
@@ -79,7 +79,7 @@
 - 定义 shape
 - 暴露统一 launch 接口
 
-### [gemm_kernels.cu](/root/codes/deploy_server/src/gemm/gemm_kernels.cu)
+### [gemm_kernels.cu](../src/gemm/gemm_kernels.cu)
 
 这里是 GEMM 的主体，按“难度递增”组织。
 
@@ -154,7 +154,7 @@
 - Tensor Core 很快，但条件多
 - shape、内存布局、数据类型、fragment 使用方式都有约束
 
-### [gemm_runner.cu](/root/codes/deploy_server/src/gemm/gemm_runner.cu)
+### [gemm_runner.cu](../src/gemm/gemm_runner.cu)
 
 作用：
 
@@ -167,14 +167,14 @@
 
 ## 4. Attention 层
 
-### [attention_kernels.h](/root/codes/deploy_server/src/attention/attention_kernels.h)
+### [attention_kernels.h](../src/attention/attention_kernels.h)
 
 作用：
 
 - 定义 attention kernel 类型
 - 暴露 forward/backward launch 接口
 
-### [attention_kernels.cu](/root/codes/deploy_server/src/attention/attention_kernels.cu)
+### [attention_kernels.cu](../src/attention/attention_kernels.cu)
 
 这里放 attention 相关 kernel。
 
@@ -262,7 +262,7 @@
 - `flash_bwd` 当前是 FlashAttention-style 教学 backward
 - 它不是生产级 flash backward kernel
 
-### [attention_runner.cu](/root/codes/deploy_server/src/attention/attention_runner.cu)
+### [attention_runner.cu](../src/attention/attention_runner.cu)
 
 作用和 `gemm_runner.cu` 类似，只是输入维度更复杂。
 
@@ -274,14 +274,14 @@
 
 ## 5. 测试层
 
-### [test_gemm.cu](/root/codes/deploy_server/tests/test_gemm.cu)
+### [test_gemm.cu](../tests/test_gemm.cu)
 
 作用：
 
 - 批量覆盖 GEMM 版本
 - 对比 CPU reference
 
-### [test_attention.cu](/root/codes/deploy_server/tests/test_attention.cu)
+### [test_attention.cu](../tests/test_attention.cu)
 
 作用：
 

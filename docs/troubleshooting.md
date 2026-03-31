@@ -7,20 +7,24 @@
 ### 现象
 
 - `nvcc: command not found`
+- `nvcc fatal   : Unsupported gpu architecture 'sm_89'`
 - 找不到 CUDA 头文件
 - 链接阶段失败
 
 ### 检查项
 
-1. 确认 `/usr/local/cuda/bin/nvcc --version` 可执行
-2. 确认 [Makefile](/root/codes/deploy_server/Makefile) 中 `NVCC` 路径正确
-3. 确认机器上安装的 CUDA 版本和驱动兼容
+1. 确认 `/usr/local/cuda/bin/nvcc --version` 或 `nvcc --version` 至少有一个可执行
+2. 确认 [Makefile](../Makefile) 中 `CUDA_HOME` / `NVCC` 配置符合你的机器环境
+3. 如果默认路径不对，显式执行 `make build CUDA_HOME=/path/to/cuda` 或 `make build NVCC=/path/to/nvcc`
+4. 如果默认架构不适合你的 GPU 或 CUDA Toolkit，显式执行 `make build CUDA_ARCH=sm_80`
+5. 确认机器上安装的 CUDA 版本和驱动兼容
 
 ### 常见原因
 
 - CUDA Toolkit 没装完整
 - 驱动版本太旧
 - 本机有多个 CUDA 版本，路径指错
+- 默认 `sm_89` 和本机工具链或 GPU 不匹配
 
 ## 2. `make test` 失败
 

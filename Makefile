@@ -1,4 +1,5 @@
-NVCC ?= /usr/local/cuda/bin/nvcc
+CUDA_HOME ?= /usr/local/cuda
+NVCC ?= $(if $(wildcard $(CUDA_HOME)/bin/nvcc),$(CUDA_HOME)/bin/nvcc,nvcc)
 CUDA_ARCH ?= sm_89
 BUILD_DIR := .build
 BIN_DIR := bin

@@ -60,20 +60,34 @@ kernel 就是“在 GPU 上并行执行的函数”。在本工程里，像 GEMM
 
 ## 3. 仓库结构怎么读
 
-- [src/common](/root/codes/deploy_server/src/common)
+- [src/common](../src/common/)
   - 公共工具、reference、计时器、CLI
-- [src/gemm](/root/codes/deploy_server/src/gemm)
+- [src/gemm](../src/gemm/)
   - 矩阵乘法的不同版本
-- [src/attention](/root/codes/deploy_server/src/attention)
+- [src/attention](../src/attention/)
   - 基础 attention、FlashAttention、PagedAttention 和其他变体
-- [tests](/root/codes/deploy_server/tests)
+- [tests](../tests/)
   - 正确性测试
-- [scripts](/root/codes/deploy_server/scripts)
+- [scripts](../scripts/)
   - benchmark 脚本
-- [docs](/root/codes/deploy_server/docs)
+- [docs/overview.md](./overview.md)
   - 文档
 
 ## 4. 第一次运行应该做什么
+
+### 先确认编译器和目标架构
+
+默认构建会优先使用 `/usr/local/cuda/bin/nvcc`，如果默认位置不存在，会退回 `PATH` 中的 `nvcc`。
+
+默认 `CUDA_ARCH=sm_89`。如果你的 CUDA 安装位置或 GPU 架构不同，先按机器实际情况覆盖：
+
+```bash
+make build CUDA_ARCH=sm_80
+```
+
+```bash
+make build CUDA_HOME=/opt/cuda
+```
 
 ### 构建
 

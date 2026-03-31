@@ -23,23 +23,31 @@
 - `flash_fwd` / `flash_bwd` 是教学版 FlashAttention-style 实现
 - `async_pipeline` 是教学版双缓冲骨架，不是完整 `cp.async` 版本
 
-默认编译器：
+默认构建配置：
 
-- `/usr/local/cuda/bin/nvcc`
+- 编译器会优先使用 `/usr/local/cuda/bin/nvcc`
+- 如果默认位置不存在，会退回 `PATH` 中的 `nvcc`
 
 默认目标架构：
 
 - `sm_89`
 
+如果你的环境不同，可以在构建时覆盖：
+
+```bash
+make build CUDA_ARCH=sm_80
+make build CUDA_HOME=/opt/cuda
+```
+
 ## 如果你是 CUDA 初学者，先看这些
 
-1. [getting_started.md](/root/codes/deploy_server/docs/getting_started.md)
-2. [architecture.md](/root/codes/deploy_server/docs/architecture.md)
-3. [examples.md](/root/codes/deploy_server/docs/examples.md)
-4. [optimization_playbook.md](/root/codes/deploy_server/docs/optimization_playbook.md)
-5. [benchmarking.md](/root/codes/deploy_server/docs/benchmarking.md)
-6. [cuda_guidelines.md](/root/codes/deploy_server/docs/cuda_guidelines.md)
-7. [troubleshooting.md](/root/codes/deploy_server/docs/troubleshooting.md)
+1. [getting_started.md](./getting_started.md)
+2. [architecture.md](./architecture.md)
+3. [examples.md](./examples.md)
+4. [optimization_playbook.md](./optimization_playbook.md)
+5. [benchmarking.md](./benchmarking.md)
+6. [cuda_guidelines.md](./cuda_guidelines.md)
+7. [troubleshooting.md](./troubleshooting.md)
 
 ## 最常用命令
 
@@ -128,4 +136,4 @@ make bench
 ./bin/attention_runner --kernel paged_fwd --dtype fp32 --batch 1 --heads 8 --kv-heads 8 --seq-q 1 --seq-kv 256 --head-dim 64 --page-size 16 --check true
 ```
 
-更多命令见 [examples.md](/root/codes/deploy_server/docs/examples.md)。
+更多命令见 [examples.md](./examples.md)。

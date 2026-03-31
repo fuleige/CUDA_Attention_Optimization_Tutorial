@@ -10,14 +10,14 @@
 
 如果你对 CUDA 还不熟，建议按这个顺序阅读：
 
-1. [overview.md](/root/codes/deploy_server/docs/overview.md)
-2. [getting_started.md](/root/codes/deploy_server/docs/getting_started.md)
-3. [architecture.md](/root/codes/deploy_server/docs/architecture.md)
-4. [examples.md](/root/codes/deploy_server/docs/examples.md)
-5. [optimization_playbook.md](/root/codes/deploy_server/docs/optimization_playbook.md)
-6. [benchmarking.md](/root/codes/deploy_server/docs/benchmarking.md)
-7. [cuda_guidelines.md](/root/codes/deploy_server/docs/cuda_guidelines.md)
-8. [troubleshooting.md](/root/codes/deploy_server/docs/troubleshooting.md)
+1. [overview.md](docs/overview.md)
+2. [getting_started.md](docs/getting_started.md)
+3. [architecture.md](docs/architecture.md)
+4. [examples.md](docs/examples.md)
+5. [optimization_playbook.md](docs/optimization_playbook.md)
+6. [benchmarking.md](docs/benchmarking.md)
+7. [cuda_guidelines.md](docs/cuda_guidelines.md)
+8. [troubleshooting.md](docs/troubleshooting.md)
 
 常用命令：
 
@@ -27,7 +27,17 @@ make test
 make bench
 ```
 
-默认编译器是 `/usr/local/cuda/bin/nvcc`，默认目标架构是 `sm_89`。
+构建默认值：
+
+- `Makefile` 会优先使用 `/usr/local/cuda/bin/nvcc`；如果你的 CUDA 安装在别处，可以覆盖 `CUDA_HOME` 或 `NVCC`
+- 默认目标架构是 `sm_89`；如果你的 GPU 或 CUDA 版本不同，请显式覆盖 `CUDA_ARCH`
+
+例如：
+
+```bash
+make build CUDA_ARCH=sm_80
+make build CUDA_HOME=/opt/cuda
+```
 
 当前要先知道的几个约束：
 
