@@ -102,7 +102,7 @@ make bench
 
 这里要特别注意：
 
-- 仓库中的 `flash_*` 重点在讲解 online softmax 和 tile 化思路
+- 仓库中的 `flash_fwd` 重点在讲解 online softmax 和 tile 化思路
 - 它不是对生产级 FlashAttention kernel 的逐指令复刻
 - `paged_fwd` 重点在 page table 和逻辑/物理映射，也支持 mask 作用在逻辑 token 顺序上
 

@@ -12,6 +12,10 @@
 ```
 
 ```bash
+./bin/gemm_runner --kernel coalesced --dtype fp32 --m 256 --n 256 --k 256 --check true
+```
+
+```bash
 ./bin/gemm_runner --kernel shared --dtype fp32 --m 512 --n 512 --k 512 --check true
 ```
 

@@ -1,56 +1,63 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-This repository is currently a minimal Git scaffold with no application code checked in yet. As the project grows, keep the top level organized and predictable:
 
-- `src/` for application code
-- `tests/` for automated tests
-- `scripts/` for local tooling and deployment helpers
-- `docs/` for design notes and operational runbooks
-- `assets/` for static files only when needed
+This is a CUDA C++ teaching project covering GEMM and Attention kernel optimizations.
 
-Prefer small, focused modules. Group code by feature or service boundary rather than by file type once `src/` exists.
+- `src/common/` — shared utilities: CLI parsing, CUDA error checking, timing, data types, CPU reference implementations
+- `src/gemm/` — GEMM kernels (naive → coalesced → shared → register-blocked → vectorized → double-buffered → async-pipeline → WMMA/Tensor Core)
+- `src/attention/` — Attention kernels (basic, flash, paged, GQA, sliding window, block sparse) with forward and backward
+- `tests/` — correctness tests comparing GPU kernels against CPU reference
+- `scripts/` — benchmark automation
+- `docs/` — learning-oriented documentation
+- `bin/` — compiled binaries (gitignored)
+- `.build/` — build artifacts and benchmark CSV output (gitignored)
 
 ## Build, Test, and Development Commands
-No build or test automation is defined yet. When you add tooling, expose it through documented, repeatable commands and update this file in the same change.
 
-Current repository checks:
+- `make build` — compiles `bin/gemm_runner`, `bin/attention_runner`, `bin/test_gemm`, `bin/test_attention`
+- `make test` — runs the CUDA correctness suite on the active GPU
+- `make bench` — writes CSV benchmark results to `.build/bench/`
+- `make debug` — clean rebuild with debug flags (`-O0 -g -G`)
+- `make clean` — removes `bin/` and `.build/`
 
-- `git status --short --branch` shows branch state and untracked files
-- `find . -maxdepth 2 -type f | sort` lists the current tracked layout
+Build configuration overrides:
 
-Current project commands:
+```bash
+make build CUDA_ARCH=sm_80        # target a different GPU architecture
+make build CUDA_HOME=/opt/cuda    # use a non-default CUDA installation
+```
 
-- `make build` builds `bin/gemm_runner`, `bin/attention_runner`, `bin/test_gemm`, and `bin/test_attention`
-- `make test` runs the CUDA correctness suite on the active GPU
-- `make bench` writes CSV benchmark results to `.build/bench/`
-
-Recommended future conventions:
-
-- `make build` to create deployable artifacts
-- `make test` to run the full test suite
-- `make lint` to run formatting and static analysis
+Default: `CUDA_ARCH=sm_89`, `CUDA_HOME=/usr/local/cuda`.
 
 ## Coding Style & Naming Conventions
-Use 4 spaces for indentation unless the chosen language has a stronger standard. Name files and directories consistently:
 
-- `snake_case` for scripts and filesystem paths
-- `PascalCase` for classes and type names
-- `camelCase` for variables and functions where the language expects it
+- 4-space indentation, C++17
+- `snake_case` for files, variables, and functions
+- `PascalCase` for types and enum values (e.g., `AttentionShape`, `GemmKernelKind::kNaive`)
+- All CUDA API calls wrapped in `CUDA_CHECK()` for fail-fast error reporting
+- Kernel parameters are explicit (shape, stride, options) — no hidden global state
 
-Adopt a formatter and linter early, and keep generated files out of version control unless they are required for deployment.
+## Key Constraints
+
+- Attention forward kernels require `head_dim <= 256`
+- GQA requires `num_heads % num_kv_heads == 0`
+- WMMA requires `m`, `n`, `k` to be multiples of 16 and `dtype=fp16`
+- Backward kernel (`basic_bwd`) uses 1 thread per block — correct but slow by design (teaching)
+- `flash_fwd` is a teaching FlashAttention-style kernel, not a production implementation
+- `async_pipeline` is a structural placeholder for `cp.async` exercises
+- Tensor sizes are validated against int32 overflow before kernel launch
 
 ## Testing Guidelines
-Place tests in `tests/` and mirror the source layout where practical, for example `tests/test_deploy.py` for `src/deploy.py`. Favor fast, deterministic tests. Add at least one automated test for each new behavior or bug fix, and document any manual verification steps in the pull request when automation is not yet available.
+
+Tests live in `tests/` and compare GPU kernel output against CPU reference implementations in `src/common/reference.cu`. Every kernel variant (including fp16 paths) is covered. Tolerance thresholds are set per-test to account for floating-point precision differences.
 
 ## Commit & Pull Request Guidelines
-There is no existing commit history yet, so use clear, imperative commit messages such as `Add deployment scaffold` or `Create health check script`. Keep commits focused.
+
+Use clear, imperative commit messages. Keep commits focused.
 
 Pull requests should include:
 
 - a brief summary of the change
-- rationale and rollout impact
-- linked issue or task, if available
-- test evidence or manual verification notes
-
-If a change affects operations or deployment, include the exact commands or configuration paths reviewers need to validate it.
+- test evidence (`make test` output)
+- benchmark comparison if performance-relevant

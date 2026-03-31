@@ -118,11 +118,12 @@ ncu --set full ./bin/attention_runner --kernel flash_fwd --dtype fp32 --batch 1 
 
 建议你先只做三类对比：
 
-1. `naive` vs `shared`
-2. `basic_fwd` vs `flash_fwd`
-3. `basic_fwd` vs `sliding_fwd` / `block_sparse_fwd`
+1. `naive` vs `coalesced`（看合并访存的影响）
+2. `coalesced` vs `shared`（看数据复用的影响）
+3. `basic_fwd` vs `flash_fwd`
+4. `basic_fwd` vs `sliding_fwd` / `block_sparse_fwd`
 
-这三类最容易建立“为什么会变快”的直觉。
+这四类最容易建立”为什么会变快”的直觉。
 
 做 `flash_fwd` 对比时要带着一个正确预期：
 

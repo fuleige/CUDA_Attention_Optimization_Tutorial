@@ -376,10 +376,11 @@ PagedAttention 更关注：
 比较：
 
 - `naive`
+- `coalesced`
 - `shared`
 - `register_blocked`
 
-观察相同 shape 下性能变化。
+先观察 `naive` 和 `coalesced` 的差距——仅改变 `threadIdx.x` 的映射方向（行 vs 列）就能看到合并访存的影响。再继续对比 `shared` 和 `register_blocked`，观察数据复用和寄存器分块带来的加速。
 
 ### 练习 2
 
