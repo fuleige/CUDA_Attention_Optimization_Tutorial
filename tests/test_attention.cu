@@ -218,7 +218,6 @@ int main() {
     ok = run_forward_case<half>(AttentionKernelKind::kBasicForward, dense_shape, dense_opts) && ok;
     ok = run_forward_case<half>(AttentionKernelKind::kFlashForward, dense_shape, dense_opts) && ok;
     ok = run_backward_case(AttentionKernelKind::kBasicBackward) && ok;
-    ok = run_backward_case(AttentionKernelKind::kFlashBackward) && ok;
 
     ok = expect_validation_error(
              AttentionKernelKind::kBasicForward,

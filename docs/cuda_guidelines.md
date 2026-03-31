@@ -132,7 +132,7 @@ CUDA 程序有一个容易让初学者困惑的点：
 
 ## 7. 当前实现边界
 
-- `flash_bwd` 当前是“可运行的教学版 backward”，不是高度优化的生产实现
+- `basic_bwd` 是教学版 backward（每 block 1 线程），不是高度优化的生产实现
 - `async_pipeline` 保留了双缓冲的调度结构，用于承接后续 `cp.async` 深化
 - `wmma` 版本要求矩阵维度是 `16` 的倍数，并使用 `fp16` 输入
 - attention forward 示例当前要求 `head_dim <= 256`

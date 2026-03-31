@@ -25,6 +25,7 @@ struct GemmShape {
 
 std::string gemm_kernel_name(GemmKernelKind kind);
 GemmKernelKind parse_gemm_kernel(const std::string& name);
+void validate_gemm_inputs(GemmKernelKind kind, DataType dtype, const GemmShape& shape);
 
 template <typename T>
 float launch_gemm(

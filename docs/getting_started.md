@@ -155,9 +155,9 @@ make bench
 - `paged_fwd`
   - 支持 `--causal`、`--window`、`--block-sparse`、`--page-size`
 
-### 关于 `flash_*`
+### 关于 `flash_fwd`
 
-这里的 `flash_fwd` / `flash_bwd` 是教学版 FlashAttention-style 实现。
+`flash_fwd` 是教学版 FlashAttention-style 前向实现。反向传播只提供一个基础版本 `basic_bwd`（生产级 flash backward 需要保存 log-sum-exp 并重新计算 softmax，超出本教程范围——详见 FlashAttention-2 论文）。
 
 重点是帮助你理解：
 

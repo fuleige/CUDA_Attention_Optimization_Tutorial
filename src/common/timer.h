@@ -16,6 +16,12 @@ struct CudaEventTimer {
         cudaEventDestroy(stop);
     }
 
+    // CUDA events are GPU resources — copying would cause double-destroy.
+    CudaEventTimer(const CudaEventTimer&) = delete;
+    CudaEventTimer& operator=(const CudaEventTimer&) = delete;
+    CudaEventTimer(CudaEventTimer&&) = delete;
+    CudaEventTimer& operator=(CudaEventTimer&&) = delete;
+
     void begin(cudaStream_t stream = nullptr) {
         CUDA_CHECK(cudaEventRecord(start, stream));
     }

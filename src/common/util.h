@@ -95,6 +95,20 @@ inline bool compare_vectors(
     return true;
 }
 
+// Print a CSV header line from the same field vector used by print_csv_row.
+// Keeping header and data in the same structure prevents them from drifting
+// out of sync — a common source of silent data-corruption bugs in scripts
+// that parse CSV output.
+inline void print_csv_header(const std::vector<std::pair<std::string, std::string>>& fields) {
+    for (std::size_t i = 0; i < fields.size(); ++i) {
+        std::cout << fields[i].first;
+        if (i + 1 != fields.size()) {
+            std::cout << ",";
+        }
+    }
+    std::cout << std::endl;
+}
+
 inline void print_csv_row(const std::vector<std::pair<std::string, std::string>>& fields) {
     for (std::size_t i = 0; i < fields.size(); ++i) {
         std::cout << fields[i].second;

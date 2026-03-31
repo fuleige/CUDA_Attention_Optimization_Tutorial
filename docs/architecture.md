@@ -243,7 +243,7 @@
 - 不是每个 query 都看所有 key
 - 用块级稀疏规则减少计算
 
-#### basic_bwd / flash_bwd
+#### basic_bwd
 
 学习重点：
 
@@ -255,12 +255,9 @@
 - 结构清晰
 - 正确性可验证
 
-而不是极致性能。
+而不是极致性能（每个 block 仅使用 1 个线程）。
 
-特别是：
-
-- `flash_bwd` 当前是 FlashAttention-style 教学 backward
-- 它不是生产级 flash backward kernel
+生产级 flash backward 需要保存 log-sum-exp 并重新计算 softmax、在 warp 级别并行化 head_dim 维度，这些超出本教程范围——详见 FlashAttention-2 论文。
 
 ### [attention_runner.cu](../src/attention/attention_runner.cu)
 

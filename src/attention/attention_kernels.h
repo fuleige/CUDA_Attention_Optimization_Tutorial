@@ -12,8 +12,12 @@ enum class AttentionKernelKind {
     kGqaForward,
     kSlidingForward,
     kBlockSparseForward,
+    // Only one backward kernel is provided.  A production "flash backward"
+    // would re-derive softmax probabilities from the saved log-sum-exp
+    // rather than storing the full attention matrix, drastically cutting
+    // memory usage.  That optimisation is out of scope for this teaching
+    // codebase — see the FlashAttention-2 paper for details.
     kBasicBackward,
-    kFlashBackward,
 };
 
 std::string attention_kernel_name(AttentionKernelKind kind);

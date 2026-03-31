@@ -4,7 +4,9 @@
 
 #include <mma.h>
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <type_traits>
 
@@ -20,10 +22,16 @@ __device__ inline float load_as_float<half>(half value) {
     return __half2float(value);
 }
 
+// ── Naive kernel ──────────────────────────────────────────────────────
+// threadIdx.x is mapped to *rows* so that adjacent threads write to
+// addresses that are `n` elements apart in C (row-major).  This causes
+// non-coalesced global-memory writes — the GPU must issue one transaction
+// per thread instead of merging them.  Compare with the coalesced kernel
+// below to see the performance impact of fixing this one mapping.
 template <typename T>
 __global__ void gemm_naive_kernel(const T* a, const T* b, float* c, int m, int n, int k) {
-    const int row = blockIdx.y * blockDim.y + threadIdx.y;
-    const int col = blockIdx.x * blockDim.x + threadIdx.x;
+    const int row = blockIdx.x * blockDim.x + threadIdx.x;   // threadIdx.x → row (BAD for coalescing)
+    const int col = blockIdx.y * blockDim.y + threadIdx.y;
     if (row >= m || col >= n) {
         return;
     }
@@ -31,24 +39,35 @@ __global__ void gemm_naive_kernel(const T* a, const T* b, float* c, int m, int n
     for (int inner = 0; inner < k; ++inner) {
         acc += load_as_float(a[row * k + inner]) * load_as_float(b[inner * n + col]);
     }
+    // Adjacent threads (threadIdx.x, threadIdx.x+1) write to c[row*n+col]
+    // and c[(row+1)*n+col] — stride of `n`, not 1 → non-coalesced.
     c[row * n + col] = acc;
 }
 
+// ── Coalesced kernel ─────────────────────────────────────────────────
+// The only change from the naive kernel: threadIdx.x is now mapped to
+// *columns*.  Adjacent threads write c[row*n+col] and c[row*n+col+1] —
+// stride of 1 — so the hardware can merge them into a single wide
+// transaction.  This alone can give a 2–5× speedup on large matrices.
 template <typename T>
 __global__ void gemm_coalesced_kernel(const T* a, const T* b, float* c, int m, int n, int k) {
-    const int col = blockIdx.x * blockDim.x + threadIdx.x;
+    const int col = blockIdx.x * blockDim.x + threadIdx.x;   // threadIdx.x → col (GOOD for coalescing)
     const int row = blockIdx.y * blockDim.y + threadIdx.y;
     if (row >= m || col >= n) {
         return;
     }
     float acc = 0.0f;
-#pragma unroll 4
     for (int inner = 0; inner < k; ++inner) {
         acc += load_as_float(a[row * k + inner]) * load_as_float(b[inner * n + col]);
     }
     c[row * n + col] = acc;
 }
 
+// ── Shared-memory tiled kernel ───────────────────────────────────────
+// Each thread block loads a TILE×TILE sub-matrix of A and B into shared
+// memory, then every thread in the block can reuse that data.  This
+// converts O(TILE) global loads per element into O(1) shared loads,
+// reducing global memory traffic by ~TILE×.
 template <typename T, int TILE>
 __global__ void gemm_shared_kernel(const T* a, const T* b, float* c, int m, int n, int k) {
     __shared__ T a_tile[TILE][TILE];
@@ -77,6 +96,11 @@ __global__ void gemm_shared_kernel(const T* a, const T* b, float* c, int m, int 
     }
 }
 
+// ── Register-blocked kernel ──────────────────────────────────────────
+// Each thread computes a TM×TN sub-tile of the output, keeping partial
+// sums in registers.  This increases the compute-to-load ratio: each
+// shared-memory value is reused TM (or TN) times before being evicted.
+// Tuning BM/BN/BK/TM/TN is the main lever for hitting peak throughput.
 template <typename T, int BM, int BN, int BK, int TM, int TN>
 __global__ void gemm_register_blocked_kernel(const T* a, const T* b, float* c, int m, int n, int k) {
     __shared__ T a_tile[BM][BK];
@@ -141,8 +165,15 @@ __global__ void gemm_register_blocked_kernel(const T* a, const T* b, float* c, i
     }
 }
 
+// ── Vectorized (unrolled) kernel ──────────────────────────────────────
+// Same tiling as the shared-memory kernel, but the inner loop is manually
+// unrolled by 4.  This reduces loop overhead and lets the compiler
+// schedule independent multiply-adds in parallel.
+// IMPORTANT: TILE must be a multiple of 4; otherwise the unrolled loop
+// reads past the end of shared memory — a silent, hard-to-debug bug.
 template <typename T, int TILE>
 __global__ void gemm_vectorized_kernel(const T* a, const T* b, float* c, int m, int n, int k) {
+    static_assert(TILE % 4 == 0, "TILE must be a multiple of 4 for the unrolled inner loop");
     __shared__ T a_tile[TILE][TILE];
     __shared__ T b_tile[TILE][TILE];
 
@@ -175,6 +206,11 @@ __global__ void gemm_vectorized_kernel(const T* a, const T* b, float* c, int m, 
     }
 }
 
+// ── Double-buffered kernel ───────────────────────────────────────────
+// Two sets of shared-memory tiles ("buffers") are used: while one is
+// being read for the current tile's computation, the next tile's data is
+// loaded into the other buffer.  This overlaps global-memory latency
+// with arithmetic, keeping the ALUs busy instead of stalling.
 template <typename T, int TILE>
 __global__ void gemm_double_buffered_kernel(const T* a, const T* b, float* c, int m, int n, int k) {
     __shared__ T a_tile[2][TILE][TILE];
@@ -220,11 +256,15 @@ __global__ void gemm_double_buffered_kernel(const T* a, const T* b, float* c, in
     }
 }
 
+// ── Async-pipeline kernel (teaching placeholder) ────────────────────
+// Structurally identical to the double-buffered kernel above.  On Ampere
+// (sm_80+) GPUs you would replace the explicit global→shared copies with
+// `cp.async` instructions and `__pipeline_*` fences, letting the hardware
+// copy data in the background without occupying register file or ALU.
+// This kernel exists as a placeholder so you can benchmark the same loop
+// structure and then drop in the real async copies as an exercise.
 template <typename T, int TILE>
 __global__ void gemm_async_pipeline_kernel(const T* a, const T* b, float* c, int m, int n, int k) {
-    // This version preserves the same double-buffered schedule but is kept as a
-    // separate kernel so the runner and docs can discuss where cp.async would
-    // replace the explicit global-to-shared copies on Ampere+.
     __shared__ T a_tile[2][TILE][TILE];
     __shared__ T b_tile[2][TILE][TILE];
 
@@ -265,6 +305,11 @@ __global__ void gemm_async_pipeline_kernel(const T* a, const T* b, float* c, int
     }
 }
 
+// ── WMMA (Tensor Core) kernel ────────────────────────────────────────
+// Uses the nvcuda::wmma API to offload 16×16×16 matrix-multiply-
+// accumulate to Tensor Cores (available on Volta / sm_70+).  B is stored
+// in column-major so it can be loaded as wmma::col_major, which avoids
+// an in-kernel transpose.  Each warp computes one 16×16 output tile.
 __global__ void gemm_wmma_kernel(const half* a, const half* b_col_major, float* c, int m, int n, int k) {
     using namespace nvcuda;
     const int warp_idx = threadIdx.x / warpSize;
@@ -296,12 +341,16 @@ template <typename T>
 float dispatch_gemm(GemmKernelKind kind, const T* d_a, const T* d_b, float* d_c, const GemmShape& shape) {
     constexpr int tile = 16;
     dim3 block(tile, tile);
+    // Default grid: blockIdx.x covers columns, blockIdx.y covers rows.
     dim3 grid((shape.n + tile - 1) / tile, (shape.m + tile - 1) / tile);
 
     switch (kind) {
-        case GemmKernelKind::kNaive:
-            gemm_naive_kernel<<<grid, block>>>(d_a, d_b, d_c, shape.m, shape.n, shape.k);
+        case GemmKernelKind::kNaive: {
+            // Naive kernel maps threadIdx.x → row, so blockIdx.x covers rows.
+            dim3 naive_grid((shape.m + tile - 1) / tile, (shape.n + tile - 1) / tile);
+            gemm_naive_kernel<<<naive_grid, block>>>(d_a, d_b, d_c, shape.m, shape.n, shape.k);
             break;
+        }
         case GemmKernelKind::kCoalesced:
             gemm_coalesced_kernel<<<grid, block>>>(d_a, d_b, d_c, shape.m, shape.n, shape.k);
             break;
@@ -381,6 +430,32 @@ GemmKernelKind parse_gemm_kernel(const std::string& name) {
     throw std::runtime_error("Unknown GEMM kernel: " + name);
 }
 
+void validate_gemm_inputs(GemmKernelKind kind, DataType dtype, const GemmShape& shape) {
+    const auto require = [](bool condition, const std::string& message) {
+        if (!condition) {
+            throw std::runtime_error(message);
+        }
+    };
+    require(shape.m > 0 && shape.n > 0 && shape.k > 0, "m, n, k must all be > 0");
+    if (kind == GemmKernelKind::kWmma) {
+        require(dtype == DataType::kFloat16, "WMMA kernel requires --dtype fp16");
+        require((shape.m % 16) == 0 && (shape.n % 16) == 0 && (shape.k % 16) == 0,
+                "WMMA requires m, n, k to be multiples of 16");
+    }
+    // Guard against int32 overflow in row*k+col / row*n+col index math.
+    {
+        const long long max_idx = std::max({
+            static_cast<long long>(shape.m) * shape.k,
+            static_cast<long long>(shape.k) * shape.n,
+            static_cast<long long>(shape.m) * shape.n,
+        });
+        constexpr long long limit = static_cast<long long>(std::numeric_limits<int>::max());
+        require(max_idx <= limit,
+                "Matrix size exceeds int32 range (" + std::to_string(max_idx) +
+                " elements).  Use smaller m/n/k.");
+    }
+}
+
 template <typename T>
 float launch_gemm(
     GemmKernelKind kind,
@@ -401,9 +476,6 @@ float launch_gemm<half>(
     const GemmShape& shape
 ) {
     if (kind == GemmKernelKind::kWmma) {
-        if ((shape.m % 16) != 0 || (shape.n % 16) != 0 || (shape.k % 16) != 0) {
-            throw std::runtime_error("WMMA requires m/n/k to be multiples of 16.");
-        }
         dim3 block(128);
         dim3 grid((shape.n + 63) / 64, (shape.m + 15) / 16);
         gemm_wmma_kernel<<<grid, block>>>(d_a, d_b, d_c, shape.m, shape.n, shape.k);

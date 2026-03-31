@@ -9,6 +9,8 @@ namespace {
 
 template <typename T>
 bool run_one(GemmKernelKind kind, const GemmShape& shape) {
+    validate_gemm_inputs(kind, std::is_same_v<T, half> ? DataType::kFloat16 : DataType::kFloat32, shape);
+
     auto h_a = random_vector<T>(shape.m * shape.k, 0.5f, 3);
     auto h_b = random_vector<T>(shape.k * shape.n, 0.5f, 5);
     auto h_ref_b = h_b;

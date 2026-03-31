@@ -70,7 +70,3 @@
 ```bash
 ./bin/attention_runner --kernel basic_bwd --dtype fp32 --batch 1 --heads 4 --kv-heads 4 --seq-q 64 --seq-kv 64 --head-dim 32 --causal true --check true
 ```
-
-```bash
-./bin/attention_runner --kernel flash_bwd --dtype fp32 --batch 1 --heads 4 --kv-heads 4 --seq-q 64 --seq-kv 64 --head-dim 32 --causal true --check true
-```

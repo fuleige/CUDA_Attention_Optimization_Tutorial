@@ -20,7 +20,7 @@
 
 - attention forward 示例当前支持 `head_dim <= 256`
 - `gqa_fwd` 要求 `num_heads` 能被 `num_kv_heads` 整除
-- `flash_fwd` / `flash_bwd` 是教学版 FlashAttention-style 实现
+- `flash_fwd` 是教学版 FlashAttention-style 前向实现（反向只提供基础版本 `basic_bwd`）
 - `async_pipeline` 是教学版双缓冲骨架，不是完整 `cp.async` 版本
 
 默认构建配置：

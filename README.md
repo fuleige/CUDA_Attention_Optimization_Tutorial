@@ -43,5 +43,5 @@ make build CUDA_HOME=/opt/cuda
 
 - attention forward 示例当前要求 `head_dim <= 256`
 - `GQA/MQA` 风格示例要求 `num_heads % num_kv_heads == 0`
-- `flash_*` 是 FlashAttention-style 教学实现
+- `flash_fwd` 是 FlashAttention-style 教学实现（仅前向；反向只提供基础版本）
 - `async_pipeline` 是为后续 `cp.async` 演进保留的教学骨架，不是完整生产实现

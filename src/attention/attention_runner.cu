@@ -40,6 +40,7 @@ int run_forward(const CliArgs& args, AttentionKernelKind kind) {
     const int iters = args.get_int("iters", 20);
     const bool check = args.get_bool("check", false);
     const bool csv = args.get_bool("csv", false);
+    const bool csv_header = args.get_bool("csv-header", false);
     const int page_size = args.get_int("page-size", 16);
     validate_attention_inputs(
         kind,
@@ -142,7 +143,7 @@ int run_forward(const CliArgs& args, AttentionKernelKind kind) {
     const double bandwidth = bytes / (avg_ms * 1e-3) / 1e9;
 
     if (csv) {
-        print_csv_row({
+        const std::vector<std::pair<std::string, std::string>> fields = {
             {"kernel", attention_kernel_name(kind)},
             {"dtype", dtype_name(std::is_same_v<T, half> ? DataType::kFloat16 : DataType::kFloat32)},
             {"batch", std::to_string(shape.batch_size)},
@@ -157,7 +158,11 @@ int run_forward(const CliArgs& args, AttentionKernelKind kind) {
             {"max_abs_err", std::to_string(max_abs_err)},
             {"max_rel_err", std::to_string(max_rel_err)},
             {"pass", pass ? "1" : "0"},
-        });
+        };
+        if (csv_header) {
+            print_csv_header(fields);
+        }
+        print_csv_row(fields);
     } else {
         std::cout << "kernel=" << attention_kernel_name(kind)
                   << " dtype=" << (std::is_same_v<T, half> ? "fp16" : "fp32")
@@ -189,6 +194,7 @@ int run_backward(const CliArgs& args, AttentionKernelKind kind) {
     const int iters = args.get_int("iters", 10);
     const bool check = args.get_bool("check", false);
     const bool csv = args.get_bool("csv", false);
+    const bool csv_header = args.get_bool("csv-header", false);
     validate_attention_inputs(kind, DataType::kFloat32, shape, options, 0);
 
     auto h_q = random_vector<float>(shape.batch_size * shape.num_heads * shape.seq_len_q * shape.head_dim, 0.5f, 23);
@@ -263,14 +269,18 @@ int run_backward(const CliArgs& args, AttentionKernelKind kind) {
     }
 
     if (csv) {
-        print_csv_row({
+        const std::vector<std::pair<std::string, std::string>> fields = {
             {"kernel", attention_kernel_name(kind)},
             {"dtype", "fp32"},
             {"avg_ms", std::to_string(avg_ms)},
             {"max_abs_err", std::to_string(max_abs_err)},
             {"max_rel_err", std::to_string(max_rel_err)},
             {"pass", pass ? "1" : "0"},
-        });
+        };
+        if (csv_header) {
+            print_csv_header(fields);
+        }
+        print_csv_row(fields);
     } else {
         std::cout << "kernel=" << attention_kernel_name(kind)
                   << " dtype=fp32"
@@ -293,7 +303,7 @@ int run_backward(const CliArgs& args, AttentionKernelKind kind) {
 
 void print_help() {
     std::cout << "Usage: ./bin/attention_runner [options]\n"
-              << "  --kernel basic_fwd|flash_fwd|paged_fwd|gqa_fwd|sliding_fwd|block_sparse_fwd|basic_bwd|flash_bwd\n"
+              << "  --kernel basic_fwd|flash_fwd|paged_fwd|gqa_fwd|sliding_fwd|block_sparse_fwd|basic_bwd\n"
               << "  --dtype fp32|fp16\n"
               << "  --batch 1 --heads 8 --kv-heads 8 --seq-q 128 --seq-kv 128 --head-dim 64\n"
               << "  --causal true --window 64 --block-size 16 --block-sparse true --page-size 16\n"
@@ -303,7 +313,7 @@ void print_help() {
               << "    block_sparse_fwd uses --block-size\n"
               << "    paged_fwd supports causal/window/block-sparse options plus --page-size\n"
               << "    forward kernels currently require --head-dim <= 256\n"
-              << "    flash_* are teaching implementations, not production-faithful FlashAttention kernels\n"
+              << "    flash_fwd is a teaching implementation, not a production-faithful FlashAttention kernel\n"
               << "  --warmup 5 --iters 20 --check true --csv true\n";
 }
 
@@ -320,7 +330,7 @@ int main(int argc, char** argv) {
     const auto dtype = parse_dtype(args.get_string("dtype", "fp32"));
 
     try {
-        if (kernel == AttentionKernelKind::kBasicBackward || kernel == AttentionKernelKind::kFlashBackward) {
+        if (kernel == AttentionKernelKind::kBasicBackward) {
             if (dtype != DataType::kFloat32) {
                 std::cerr << "Backward kernels currently require --dtype fp32" << std::endl;
                 return 1;

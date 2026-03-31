@@ -22,6 +22,9 @@ int run_case(const CliArgs& args, GemmKernelKind kind) {
     const int iters = args.get_int("iters", 50);
     const bool check = args.get_bool("check", false);
     const bool csv = args.get_bool("csv", false);
+    const bool csv_header = args.get_bool("csv-header", false);
+
+    validate_gemm_inputs(kind, std::is_same_v<T, half> ? DataType::kFloat16 : DataType::kFloat32, shape);
 
     auto h_a = random_vector<T>(shape.m * shape.k, 0.5f, 7);
     auto h_b = random_vector<T>(shape.k * shape.n, 0.5f, 11);
@@ -86,7 +89,7 @@ int run_case(const CliArgs& args, GemmKernelKind kind) {
     const double tflops = flops / (avg_ms * 1e-3) / 1e12;
 
     if (csv) {
-        print_csv_row({
+        const std::vector<std::pair<std::string, std::string>> fields = {
             {"kernel", gemm_kernel_name(kind)},
             {"dtype", dtype_name(std::is_same_v<T, half> ? DataType::kFloat16 : DataType::kFloat32)},
             {"m", std::to_string(shape.m)},
@@ -97,7 +100,11 @@ int run_case(const CliArgs& args, GemmKernelKind kind) {
             {"max_abs_err", std::to_string(max_abs_err)},
             {"max_rel_err", std::to_string(max_rel_err)},
             {"pass", pass ? "1" : "0"},
-        });
+        };
+        if (csv_header) {
+            print_csv_header(fields);
+        }
+        print_csv_row(fields);
     } else {
         std::cout << "kernel=" << gemm_kernel_name(kind)
                   << " dtype=" << (std::is_same_v<T, half> ? "fp16" : "fp32")
@@ -141,10 +148,6 @@ int main(int argc, char** argv) {
     try {
         if (dtype == DataType::kFloat16) {
             return run_case<half>(args, kernel);
-        }
-        if (kernel == GemmKernelKind::kWmma) {
-            std::cerr << "wmma requires --dtype fp16" << std::endl;
-            return 1;
         }
         return run_case<float>(args, kernel);
     } catch (const std::exception& ex) {

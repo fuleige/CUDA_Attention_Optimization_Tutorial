@@ -5,6 +5,7 @@
 
 #include <math_constants.h>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -97,6 +98,12 @@ __device__ inline bool allow_attention(
     return true;
 }
 
+// ── Basic forward attention kernel ────────────────────────────────────
+// Two-pass algorithm: (1) thread-0 computes all Q·K scores to find the
+// max, (2) every thread accumulates weighted V values using exp(score−max).
+// Simple and correct, but thread-0 is the bottleneck — all other threads
+// in the block idle during pass 1.  See the flash kernel below for the
+// online-softmax approach that avoids this serialisation.
 template <typename T, AttentionMode mode>
 __global__ void attention_basic_forward_kernel(
     const T* q,
@@ -187,6 +194,16 @@ __global__ void attention_basic_forward_kernel(
     }
 }
 
+// ── Flash-style forward attention kernel ──────────────────────────────
+// Demonstrates the core idea of FlashAttention: process K/V in tiles and
+// maintain a running (online) softmax so that only O(TILE_KV) scores are
+// materialised at a time, rather than the full seq_len_kv vector.
+// Key invariant maintained across tiles:
+//   out_acc = sum_i(softmax_weight_i * V_i)  (correctly normalised)
+// When a new tile raises the running max, all previous accumulators are
+// rescaled by exp(old_max − new_max) to stay consistent.
+// NOTE: this is a teaching kernel — it still serialises Q·K on thread-0.
+// Production FlashAttention parallelises this across warps.
 template <typename T, AttentionMode mode, int TILE_KV>
 __global__ void attention_flash_forward_kernel(
     const T* q,
@@ -301,6 +318,12 @@ __global__ void attention_flash_forward_kernel(
     }
 }
 
+// ── Paged attention kernel ────────────────────────────────────────────
+// In serving (decode) workloads the KV cache is stored in fixed-size
+// "pages" that can be scattered anywhere in GPU memory.  A page table
+// maps logical KV positions to physical page indices, just like virtual
+// memory.  This kernel demonstrates that indirection: it looks up each
+// KV position through page_table[] before computing the attention score.
 template <typename T>
 __global__ void paged_attention_forward_kernel(
     const T* q,
@@ -404,6 +427,19 @@ __global__ void paged_attention_forward_kernel(
     }
 }
 
+// ── Backward attention kernel ─────────────────────────────────────────
+// Computes gradients for Q, K, and V given grad_out (dO).
+// Algorithm:
+//   1. Recompute softmax probabilities from Q, K (forward pass replay).
+//   2. dV = P^T · dO              (grad_v via atomicAdd, since multiple
+//                                   Q rows contribute to the same KV row)
+//   3. dP = dO · V^T
+//   4. dS = P ⊙ (dP − sum(P ⊙ dP))   (softmax Jacobian)
+//   5. dQ = scale · dS · K,   dK = scale · dS^T · Q
+//
+// This kernel runs with 1 thread per block for clarity.  A production
+// version would parallelise across head_dim (similar to the forward
+// kernels) and replace atomicAdd with warp-level reductions.
 template <AttentionMode mode>
 __global__ void attention_backward_kernel(
     const float* q,
@@ -561,9 +597,21 @@ void validate_attention_inputs(
     require(shape.head_dim > 0, "head-dim must be > 0");
     require(options.block_size > 0, "block-size must be > 0");
 
-    const bool is_forward = kind == AttentionKernelKind::kBasicForward || kind == AttentionKernelKind::kFlashForward ||
-        kind == AttentionKernelKind::kPagedForward || kind == AttentionKernelKind::kGqaForward ||
-        kind == AttentionKernelKind::kSlidingForward || kind == AttentionKernelKind::kBlockSparseForward;
+    // Guard against int32 overflow in offset calculations inside kernels.
+    // The largest index is approximately batch * heads * seq * head_dim.
+    // If this exceeds INT_MAX the kernel will silently compute wrong offsets.
+    {
+        const long long max_q_offset =
+            static_cast<long long>(shape.batch_size) * shape.num_heads * shape.seq_len_q * shape.head_dim;
+        const long long max_kv_offset =
+            static_cast<long long>(shape.batch_size) * shape.num_kv_heads * shape.seq_len_kv * shape.head_dim;
+        constexpr long long limit = static_cast<long long>(std::numeric_limits<int>::max());
+        require(max_q_offset <= limit && max_kv_offset <= limit,
+                "Tensor size exceeds int32 range (" + std::to_string(std::max(max_q_offset, max_kv_offset)) +
+                " elements).  Use smaller batch/heads/seq/dim to stay within int32 indexing limits.");
+    }
+
+    const bool is_forward = kind != AttentionKernelKind::kBasicBackward;
     if (is_forward) {
         require(
             shape.head_dim <= 256,
@@ -578,10 +626,10 @@ void validate_attention_inputs(
     if (!allows_block_sparse) {
         require(!options.block_sparse, "block-sparse masking is only supported by block_sparse_fwd and paged_fwd");
     }
-    if (kind == AttentionKernelKind::kBasicBackward || kind == AttentionKernelKind::kFlashBackward) {
-        require(dtype == DataType::kFloat32, "Backward kernels currently require dtype=fp32");
-        require(options.window_left < 0, "Backward kernels currently do not support windowed masking");
-        require(!options.block_sparse, "Backward kernels currently do not support block-sparse masking");
+    if (kind == AttentionKernelKind::kBasicBackward) {
+        require(dtype == DataType::kFloat32, "Backward kernel currently requires dtype=fp32");
+        require(options.window_left < 0, "Backward kernel currently does not support windowed masking");
+        require(!options.block_sparse, "Backward kernel currently does not support block-sparse masking");
         int device = 0;
         CUDA_CHECK(cudaGetDevice(&device));
         cudaDeviceProp prop {};
@@ -589,7 +637,7 @@ void validate_attention_inputs(
         const std::size_t shared_bytes = sizeof(float) * shape.seq_len_kv * 3;
         require(
             shared_bytes <= prop.sharedMemPerBlock,
-            "Backward teaching kernel uses dynamic shared memory proportional to seq-kv and exceeds this GPU's per-block limit");
+            "Backward kernel uses dynamic shared memory proportional to seq-kv and exceeds this GPU's per-block limit");
     }
     if (kind == AttentionKernelKind::kPagedForward) {
         require(page_size > 0, "page-size must be > 0 for paged_fwd");
@@ -612,8 +660,6 @@ std::string attention_kernel_name(AttentionKernelKind kind) {
             return "block_sparse_fwd";
         case AttentionKernelKind::kBasicBackward:
             return "basic_bwd";
-        case AttentionKernelKind::kFlashBackward:
-            return "flash_bwd";
     }
     return "unknown";
 }
@@ -640,9 +686,6 @@ AttentionKernelKind parse_attention_kernel(const std::string& name) {
     }
     if (lowered == "basic_bwd") {
         return AttentionKernelKind::kBasicBackward;
-    }
-    if (lowered == "flash_bwd") {
-        return AttentionKernelKind::kFlashBackward;
     }
     throw std::runtime_error("Unknown attention kernel: " + name);
 }
@@ -685,22 +728,16 @@ void launch_attention_backward(
 ) {
     const int rows = shape.batch_size * shape.num_heads * shape.seq_len_q;
     const std::size_t shared_bytes = sizeof(float) * shape.seq_len_kv * 3;
-    switch (kind) {
-        case AttentionKernelKind::kBasicBackward:
-            attention_backward_kernel<AttentionMode::kDense><<<rows, 1, shared_bytes>>>(
-                d_q, d_k, d_v, d_grad_out, d_grad_q, d_grad_k, d_grad_v, shape.batch_size, shape.num_heads,
-                shape.num_kv_heads, shape.seq_len_q, shape.seq_len_kv, shape.head_dim, options.causal,
-                options.window_left, options.block_size);
-            break;
-        case AttentionKernelKind::kFlashBackward:
-            attention_backward_kernel<AttentionMode::kDense><<<rows, 1, shared_bytes>>>(
-                d_q, d_k, d_v, d_grad_out, d_grad_q, d_grad_k, d_grad_v, shape.batch_size, shape.num_heads,
-                shape.num_kv_heads, shape.seq_len_q, shape.seq_len_kv, shape.head_dim, options.causal,
-                options.window_left, options.block_size);
-            break;
-        default:
-            throw std::runtime_error("Unsupported backward kernel kind.");
+    if (kind != AttentionKernelKind::kBasicBackward) {
+        throw std::runtime_error("Unsupported backward kernel kind.");
     }
+    // Teaching kernel: one thread per block, simple but very slow.
+    // A production backward would parallelise across head_dim and use
+    // tiled shared-memory reductions, similar to the forward flash kernel.
+    attention_backward_kernel<AttentionMode::kDense><<<rows, 1, shared_bytes>>>(
+        d_q, d_k, d_v, d_grad_out, d_grad_q, d_grad_k, d_grad_v, shape.batch_size, shape.num_heads,
+        shape.num_kv_heads, shape.seq_len_q, shape.seq_len_kv, shape.head_dim, options.causal,
+        options.window_left, options.block_size);
     CUDA_CHECK(cudaGetLastError());
 }
 
